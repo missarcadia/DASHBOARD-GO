@@ -9,6 +9,8 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+
+	// Caminho de importação corrigido aqui
 	"github.com/charmbracelet/lipgloss"
 	"github.com/missarcadia/DASHBOARD-GO/git"
 )
@@ -56,11 +58,12 @@ func newModel() model {
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	items := []list.Item{
-		menuItem{title: "Ver Status", desc: "Executa 'git status' para ver as alterações"},
-		menuItem{title: "Ver Log Recente", desc: "Mostra os 10 últimos commits"},
+		menuItem{title: "Ver Status Detalhado", desc: "Mostra um status detalhado das alterações"},
+		menuItem{title: "Ver Info do Usuário", desc: "Exibe seu nome, email e conta do GitHub"},
 		menuItem{title: "Fazer Commit", desc: "Inicia o processo para commitar as alterações"},
 		menuItem{title: "Pull (Rebase)", desc: "Executa 'git pull --rebase'"},
 		menuItem{title: "Push", desc: "Executa 'git push' para o remote atual"},
+		menuItem{title: "Criar Repositório no GitHub", desc: "Cria um repo no GitHub e conecta o 'origin' (requer 'gh' CLI)"},
 	}
 
 	delegate := list.NewDefaultDelegate()
@@ -103,18 +106,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = commandOutputView
 		m.output = msg.output
 		if msg.err != nil {
-			m.output = msg.err.Error()
+			m.output = msg.output // Git já coloca o erro na saída
 		}
 		m.viewport.SetContent(m.output)
+		m.viewport.GotoTop()
 		return m, nil
 
 	case tea.KeyMsg:
-		// ### INÍCIO DA CORREÇÃO ###
-		// Lógica para voltar ao menu a partir de telas secundárias
 		if msg.Type == tea.KeyEsc {
-			// Verificamos se estamos em uma tela secundária
 			if m.state == commandOutputView || m.state == commitInputView {
-				// Apenas resetamos a textarea se estávamos na tela de commit
 				if m.state == commitInputView {
 					m.textarea.Reset()
 				}
@@ -122,7 +122,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		// ### FIM DA CORREÇÃO ###
 	}
 
 	switch m.state {
@@ -161,7 +160,7 @@ func (m model) View() string {
 	return appStyle.Render(s.String())
 }
 
-// handleMenuUpdate lida com a lógica da tela do menu principal
+// handleMenuUpdate agora inclui a lógica para as novas opções
 func (m *model) handleMenuUpdate(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
@@ -174,10 +173,16 @@ func (m *model) handleMenuUpdate(msg tea.Msg) tea.Cmd {
 			if ok {
 				m.state = loadingView
 				switch item.title {
-				case "Ver Status":
-					return runGitCommand("status")
-				case "Ver Log Recente":
-					return runGitCommand("log", "-n", "10", "--graph", "--pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset'")
+				case "Ver Status Detalhado":
+					return func() tea.Msg {
+						output, err := git.GetDetailedStatus()
+						return commandFinishedMsg{output: output, err: err}
+					}
+				case "Ver Info do Usuário":
+					return func() tea.Msg {
+						output, err := git.GetGitUserInfo()
+						return commandFinishedMsg{output: output, err: err}
+					}
 				case "Pull (Rebase)":
 					return runGitCommand("pull", "--rebase")
 				case "Push":
@@ -188,6 +193,8 @@ func (m *model) handleMenuUpdate(msg tea.Msg) tea.Cmd {
 					m.textarea.Placeholder = "Adicione as alterações com 'git add .' antes de commitar..."
 					m.textarea.Focus()
 					return textarea.Blink
+				case "Criar Repositório no GitHub":
+					return runGitCommand("gh", "repo", "create", "DASHBOARD-GO", "--public", "--source=.", "--remote=origin")
 				}
 			}
 		}
